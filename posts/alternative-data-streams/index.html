@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    
+    <title>Alternate Data Streams | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="http://localhost/">Blog</a></li>
+            
+        
+            
+            <li><a href="http://localhost/about/">About</a></li>
+            
+        
+            
+            <li><a href="http://localhost/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="http://localhost/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="http://localhost/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="http://localhost/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+<div class="post_header"><h2>Alternate Data Streams</h2></div>
+
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#hidden-data-in-ntfs">Hidden data in NTFS</a></li>
+    <li><a href="#manipulating-ads-es-in-powershell">Manipulating ADS-es in powershell</a>
+      <ul>
+        <li><a href="#alternate-data-streams-on-folders">Alternate data streams on folders</a></li>
+      </ul>
+    </li>
+    <li><a href="#some-applications">Some applications</a>
+      <ul>
+        <li><a href="#zoneidentifier">Zone.Identifier</a></li>
+        <li><a href="#dropbox">Dropbox</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+    
+<h3 id="hidden-data-in-ntfs">Hidden data in NTFS</h3>
+<p>Both files and folders in NTFS file system can have additional
+“forks” of data called <strong>alternate data streams</strong> (<strong>ADS</strong>-es in short). If this reminds you of forks on Mac then this is no coincidence: this feature was added to Windows NT explicitly as a support for
+compatibility with Mac&rsquo;s HFS. In general, the ability to add additional named attachments to any file of folder is a wonderful idea. Except that on Windows those attachments don&rsquo;t show up in a standard folder listings (even on command line), and, worse than that, their contents do not contribute to reported file sizes. So, for instance, you can have an innocuous looking small text file with 1GB alternate data stream. Good luck hunting for your missing disk space. The fact that such alternate streams will be dropped when moved/copied out of NTFS is just a topping on a cake. Do not store anything important in an ADS. It is needless to say that ADS-es are also a huge security risk. You can even store hidden executables inside ADS-es.</p>
+<p>On the other hand, they do have a lot of legitimate uses and they are actually used by some popular applications and even some Windows services.
+E.g., SQL Server uses ADS in database file to store snapshot data,
+<a href="https://support.microsoft.com/en-us/topic/information-about-the-attachment-manager-in-microsoft-windows-c48a4dcd-8de5-2af5-ee9b-cd795ae42738">Windows attachment manager</a> stores web content zone information in an appropriate ADS, and you can make Dropbox ignore subfolder, or a file inside Dropbox folder, by placing 1 in the <code>com.dropbox.ignored</code> ADS of that file or folder. Thus, the ability to set, query and delete ADS-es may be of some practical value. It is also a great opportunity to learn something new about powershell.</p>
+<h3 id="manipulating-ads-es-in-powershell">Manipulating ADS-es in powershell</h3>
+<p>Let us create a new file (<code>test.txt</code>) in some location, and fill it with initial data using powershell command:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Set-Content</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Value</span> <span style="color:#4e9a06">&#39;Hello World&#39;</span>
+</span></span></code></pre></div><p>We can verify that <code>test.txt</code> has size of 13 bytes. Let us now create an alternative data stream of <code>test.txt</code> called <code>aedh</code>, and fill it with some <a href="https://poets.org/poem/aedh-wishes-cloths-heaven">random data</a>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#000">$yeats</span> <span style="color:#000;font-weight:bold">=</span> <span style="color:#4e9a06">@&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">Had I the heavens&#39; embroidered cloths,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">Enwrought with golden and silver light,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">The blue and the dim and the dark cloths
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">Of night and light and the half light,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">I would spread the cloths under your feet:
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">But I, being poor, have only my dreams;
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">I have spread my dreams under your feet;
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">Tread softly because you tread on my dreams.
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">&#34;@</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">Set-Content</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Value</span> <span style="color:#000">$yeats</span> <span style="color:#000">-Stream</span> <span style="color:#000">aedh</span>
+</span></span></code></pre></div><p>When we check the file&rsquo;s metadata with</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Item</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">.\</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span>
+</span></span></code></pre></div><p>we see that the file size did not change (although <code>LastWriteTime</code> was appropriately updated). When we display the contents of `test.txt&rsquo; with</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Content</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">.\</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span>
+</span></span></code></pre></div><p>it also contains just <code>Hello World</code>. We would see the same if we opened it with <code>notepad</code>.
+To see the <code>aedh</code> stream metadata or to view its contents we need to add <code>-Stream</code> option:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Item</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000">aedh</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">Get-Content</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000">aedh</span>
+</span></span></code></pre></div><p>Some commands (including commandlets we used so far) may accept file names which include stream name after the colon, e.g.,</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Content</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">./</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span><span style="color:#a40000">:</span><span style="color:#000">aedh</span>
+</span></span></code></pre></div><p>Unfortunately, the support for such “stream aware file names” is not universal. Amazingly, <code>notepad ./test.txt:aedh</code> works, but
+<code>code ./test.txt:aedh</code> does not. <code>-Stream</code> argument of <code>Get-Item</code> works with globs, e.g., use</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Item</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000;font-weight:bold">*</span>
+</span></span></code></pre></div><p>to display all streams associated with <code>test.txt</code>. In this case you will see also <code>:$DATA</code> stream, i.e., the ordinary contents of the file. In order to see
+the number of streams in the file and the total size of file including alternate streams one can use <code>Measure-Object</code> commandlet to count and sum lengths of streams received through pipe from <code>Get-Item</code> (note the backticks to mask new-lines):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Item</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">./</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000;font-weight:bold">*</span> <span style="color:#000;font-weight:bold">`</span>
+</span></span><span style="display:flex;"><span>     <span style="color:#000;font-weight:bold">|</span> <span style="color:#204a87">Measure-Object</span> <span style="color:#000">-Property</span> <span style="color:#000">Length</span> <span style="color:#000">-Sum</span> <span style="color:#000;font-weight:bold">`</span>
+</span></span><span style="display:flex;"><span>     <span style="color:#000;font-weight:bold">|</span> <span style="color:#204a87">select </span><span style="color:#000">Count</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">Sum</span>
+</span></span></code></pre></div><p>Alternate data streams do not survive zipping: Compress <code>test.txt</code>, uncompress it, and then display data streams of uncompressed file:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Compress-Archive</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-DestinationPath</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">zip</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">Expand-Archive</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">.\</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">zip</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">cd </span><span style="color:#000">test</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">Get-Item</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">./</span><span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000;font-weight:bold">*</span>
+</span></span></code></pre></div><p>and you will notice that aedh is no longer there (it is, of course, still attached to the original file).</p>
+<p>In order to actually remove ADS from file use <code>Remove-Item</code> with appropriate arguments, e.g.,</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Remove-Item</span> <span style="color:#000">-Path</span> <span style="color:#000">test</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">txt</span> <span style="color:#000">-Stream</span> <span style="color:#000">aedh</span>
+</span></span></code></pre></div><h4 id="alternate-data-streams-on-folders">Alternate data streams on folders</h4>
+<p>One can attach alternate data streams to folders as well as to files. One significant difference is that on folders ADS-es are not “alternate”,
+but the only data streams, and this has consequences. If <code>cat</code> is a folder without any ADS-es attached, then <code>Get-Item cat -Stream *</code> displays nothing. This is one of the reasons why <code>Get-Item * -Stream *</code> is a poor replacement for
+<code>dir /R</code> which works in cmd displaying in separate lines all alternative data streams for all folders and files in the current directory in addition to ordinary information for those files and folders.</p>
+<p>Another bad thing about ADS-es on folders is that until powershell 7.2 <code>Get-Item</code> would not display information about them, <code>-Stream</code> option or not.
+On the other hand, <code>Set-Content</code> and <code>Get-Content</code> worked fine with streams on folders.</p>
+<h3 id="some-applications">Some applications</h3>
+<h4 id="zoneidentifier">Zone.Identifier</h4>
+<p>Most web browsers under Windows (including Chrome, and, of course, Edge) will attach to every downloaded file an alternative data stream named <code>Zone.Identifier</code>. Long time ago <code>Zone.Identifier</code> would contain just a number
+denoting <a href="https://www.digital-detective.net/forensic-analysis-of-zone-identifier-stream/">web content zone</a>. Web content zone <code>0</code> means
+“downloaded from local computer”, <code>1</code> is  “downloaded from intranet”, <code>2</code> “downloaded from trusted site”, <code>3</code> “downloaded from internet”, and, <code>4</code> “downloaded from somewhere Windows deems shady”. Nowdays, <code>Zone.Identifier</code> still contains web content zone, but also a lots of other things. For example, I have just downloaded (using Chrome)
+some sample data from
+<a href="https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html">one of pytorch tutorials</a>. The command</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span> <span style="color:#204a87">Get-Content</span> <span style="color:#000;font-weight:bold">.\</span><span style="color:#000">data</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">zip</span> <span style="color:#000">-Stream</span> <span style="color:#000">Zone</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">Identifier</span>
+</span></span></code></pre></div><p>returns</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ini" data-lang="ini"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">[ZoneTransfer]</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">ZoneId</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">3</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">ReferrerUrl</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">https://pytorch.org/</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">HostUrl</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">https://download.pytorch.org/tutorial/data.zip</span>
+</span></span></code></pre></div><p>Yes, this is INI file format. Above, <code>HostUrl</code> is obviously the site the file was directly downloaded from (with the full path). However, the link I clicked
+was on page <code>ReferrerUrl</code>.
+Needlesly to say, this is kind of creepy, though I do understand why  all of this info might become useful when tracking provenance of malware. It is therefore somewhat reassuring that when I downloaded the same file from incognito tab, the content of <code>Zone.Identifier</code> was far less intrusive:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ini" data-lang="ini"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">[ZoneTransfer]</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">ZoneId</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">3</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">HostUrl</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">about:internet</span>
+</span></span></code></pre></div><p>The standard Windows unzipper (called from explorer) attaches <code>Zone.Identifier</code> to each file from the uncompressed archive  with contents like that (I have censored my username):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ini" data-lang="ini"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">[ZoneTransfer]</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">ZoneId</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">3</span>
+</span></span><span style="display:flex;"><span><span style="color:#c4a000">ReferrerUrl</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">C:\Users\***Censored***\Downloads\data.zip</span>
+</span></span></code></pre></div><p>Thus, it still has the the <code>ZoneId</code> indicating this file comes from the internet.
+However, the only url is a path to the archive. So this is less concerning, especially if you later delete original zip file. Interestingly, neither <code>Expand-Archive</code> nor <code>tar</code> does the same thing.</p>
+<p>In order to run some downloaded exe file which Windows does not like, or simply to remove some privacy violating info, one can use <code>Remove-Item</code>, e.g.,</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Remove-Item</span> <span style="color:#000">-Path</span> <span style="color:#000">data</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">zip</span> <span style="color:#000">-Stream</span> <span style="color:#000">Zone</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">Identifier</span>
+</span></span></code></pre></div><p>This is, however, such a common task that there is a specialized commandlet provided which does just that: Executing</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Unblock-File</span> <span style="color:#000">-Path</span> <span style="color:#000">data</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">zip</span>
+</span></span></code></pre></div><p>removes <code>Zone.Identifier</code>. Since <code>Unblock-File</code> like <code>Remove-Item</code> accepts file names through the pipe (and by parameter name), we can get rid of all <code>Zone.Identifier</code>&rsquo;s from all the files in the current folder as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-ChildItem</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">.</span> <span style="color:#000">-Recurse</span> <span style="color:#ce5c00;font-weight:bold">-File</span> <span style="color:#000;font-weight:bold">|</span> <span style="color:#204a87">Unblock-File</span>
+</span></span></code></pre></div><p>Above, the <code>-File</code> flag causes <code>Get-ChildItem</code> to output only files.</p>
+<p>Finally, if for some unfathomable reason you want to copy <code>Zone.Identifier</code> from one file to another you can do it as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Get-Content</span> <span style="color:#000">-Path</span> <span style="color:#000">file</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">a</span> <span style="color:#000">-Stream</span> <span style="color:#000">Zone</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">Identifier</span> <span style="color:#000;font-weight:bold">`</span>
+</span></span><span style="display:flex;"><span>     <span style="color:#000;font-weight:bold">|</span> <span style="color:#204a87">Set-Content</span> <span style="color:#000">-Path</span> <span style="color:#000">file</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">b</span> <span style="color:#000">-Stream</span> <span style="color:#000">Zone</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">Identifier</span>
+</span></span></code></pre></div><h4 id="dropbox">Dropbox</h4>
+<p>Say, you store on Dropbox your node project. And since disk space limit on free Dropbox account is rather small, you obviously do not want Dropbox to save in the cloud hundreds of megabytes of <code>node_modules</code> in addition to your actual sources. Problem is, <code>node_modules</code> must be inside your project, i.e., inside Dropbox. Can you make  some files or folders deep inside Dropbox folder on your computer invisible to Dropbox? <a href="https://help.dropbox.com/pl-pl/sync/ignored-files">Yes you can</a>. Dropbox will ignore any file or folder which has an alternate data stream named <code>com.dropbox.ignored</code> with <code>1</code> inside. Thus, to avoid syncing to cloud all the external modules downloaded through npm, do the following:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">Set-Content</span> <span style="color:#000">-Path</span> <span style="color:#000;font-weight:bold">./</span><span style="color:#000">node_modules</span> <span style="color:#000">-Stream</span> <span style="color:#000">com</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">dropbox</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">ignored</span> <span style="color:#000">-Value</span> <span style="color:#0000cf;font-weight:bold">1</span> 
+</span></span></code></pre></div><p>Actually, you can do it even less verbosely (it will also work in cmd):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#204a87">echo </span><span style="color:#0000cf;font-weight:bold">1</span> <span style="color:#000;font-weight:bold">&gt;</span> <span style="color:#000;font-weight:bold">./</span><span style="color:#000">node_modules</span><span style="color:#a40000">:</span><span style="color:#000">com</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">dropbox</span><span style="color:#000;font-weight:bold">.</span><span style="color:#000">ignored</span>
+</span></span></code></pre></div><p>Be warned that the above works in cmd and powershell 7.3. It did not work in
+powershell 5.1.</p>
+
+
+<div class="post_meta">
+    <b>Timestamp:</b> January 21, 2023 <br>
+    <b>Tags:</b> 
+<a href="http://localhost/tags/windows/">#windows</a>
+,
+<a href="http://localhost/tags/powershell/">#powershell</a>
+,
+<a href="http://localhost/tags/command-line/">#command line</a>
+
+</div>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+    </script>
+</body>
+</html>

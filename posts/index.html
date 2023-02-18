@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    
+    <title>Posts | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="http://localhost/">Blog</a></li>
+            
+        
+            
+            <li><a href="http://localhost/about/">About</a></li>
+            
+        
+            
+            <li><a href="http://localhost/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="http://localhost/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="http://localhost/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="http://localhost/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+    <h2>
+        
+        Posts
+    </h2>
+    <ul class="post_list">
+    
+    <li>
+        <div class="post_date"><span>January 21, 2023</span></div>
+        <div class="post_title"><a href="http://localhost/posts/alternative-data-streams/">Alternate Data Streams</a></div>
+        
+        <div class="post_subtitle">How to manipulate alternative streams on Windows, and how to use them to solve some common problems, like Windows objecting to running an executable downloaded from the Internet or making Dropbox ignore a subfolder. Also: your computer stores information about the source of every file you download from the internet. You can start panicking</div>
+        
+        <div class="post_tags"><b>Tags:</b> 
+<a href="http://localhost/tags/windows/">#windows</a>
+,
+<a href="http://localhost/tags/powershell/">#powershell</a>
+,
+<a href="http://localhost/tags/command-line/">#command line</a>
+</div>
+    </li>
+    
+</ul>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+    </script>
+</body>
+</html>

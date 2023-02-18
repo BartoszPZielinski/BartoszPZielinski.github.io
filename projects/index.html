@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    
+    <title>Projects | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="http://localhost/">Blog</a></li>
+            
+        
+            
+            <li><a href="http://localhost/about/">About</a></li>
+            
+        
+            
+            <li><a href="http://localhost/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="http://localhost/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="http://localhost/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="http://localhost/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+    <h2>Projects</h2>
+    
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#maude-query-language">Maude Query Language</a></li>
+    <li><a href="#nondeterministic-rewriting-query-language">Nondeterministic Rewriting Query Language</a></li>
+    <li><a href="#latopis-nowogrodzki-pierwszy">Latopis Nowogrodzki Pierwszy</a></li>
+    <li><a href="#pattern-explorer">Pattern Explorer</a></li>
+  </ul>
+</nav>
+    
+    <p>Below is an (incomplete) list of my projects (software and other) with short descriptions and links</p>
+<h3 id="maude-query-language">Maude Query Language</h3>
+<p><a href="http://ki.wfi.uni.lodz.pl/mql/">Maude Query Language</a> is a implementation in a rewriting system <a href="http://maude.cs.illinois.edu/w/index.php/The_Maude_System">Maude</a> of a multiset query and DML language based on term matching, together with a simple simulation framework. Its intended application of this software is specification of data-centric business processes and their analysis through simulation and reachability analysis.</p>
+<p>Some additional information can be found here:</p>
+<ul>
+<li>B. Zieliński, “<em>A Query Language Based on Term Matching and Rewriting</em>”, Fundamenta Informaticae <strong>169</strong> (3), 237-274. DOI: <a href="https://doi.org/10.3233/FI-2019-1845">10.3233/FI-2019-1845</a>.
+
+<div class="bibtex_area">
+    <input type="checkbox" class="bibtex_checkbox" id="55ec7e6f5adf427c2d59dad7cbeb9486">
+    <label class="bibtex_btn" for="55ec7e6f5adf427c2d59dad7cbeb9486">bibtex</label>
+    <pre class="bibtex"><code>@article{b-z19,
+        title={A Query Language Based on Term Matching and Rewriting},
+        author={Zieli{\'n}ski, Bartosz},
+        journal={Fundamenta Informaticae},
+        volume={169},
+        number={3},
+        pages={237--274},
+        year={2019},
+        publisher={IOS Press},
+        doi={10.3233/FI-2019-1845}
+     }</code></pre>
+</div></li>
+</ul>
+<h3 id="nondeterministic-rewriting-query-language">Nondeterministic Rewriting Query Language</h3>
+<p><a href="http://ki.wfi.uni.lodz.pl/ndrql/">NDRQL (Nondeterministic Rewriting Query Language)</a> is a multiset query and update language executable in a term rewriting system. Its most remarkable feature, besides non-standard approach to quantification and introduction of fresh values, is non-determinism — a query result is not uniquely determined by the database. Arguably, this feature is very useful, e.g., in modelling user choices during simulation or reachability analysis of a data-centric business process — the intended application of NDQRL. Query evaluation is implemented by converting the query into a terminating term rewriting system and normalizing the initial term which encapsulates the current database. A normal form encapsulates a query result. One can prove that NDQRL can express any relational algebra query. The language is implemented in <a href="http://maude.cs.illinois.edu/w/index.php/The_Maude_System">Maude</a>.</p>
+<p>Some additional details can be found in</p>
+<ul>
+<li>B. Zieliński. &ldquo;<a href="https://content.iospress.com/articles/fundamenta-informaticae/fi2095">A Non-Deterministic Multiset Query Language</a>.&rdquo; Fundamenta Informaticae 184.2 (2021): 141&ndash;180. DOI: <a href="https://doi.org/10.3233/FI-2021-2095">10.3233/FI-2021-2095</a>
+
+<div class="bibtex_area">
+    <input type="checkbox" class="bibtex_checkbox" id="55bb99508d8e4bf44a16d3a79a02ed50">
+    <label class="bibtex_btn" for="55bb99508d8e4bf44a16d3a79a02ed50">bibtex</label>
+    <pre class="bibtex"><code>@article{bz2021,
+  title={A Non-Deterministic Multiset Query Language},
+  author={Zieli{\'n}ski, Bartosz},
+  journal={Fundamenta Informaticae},
+  volume={184},
+  number={2},
+  pages={141--180},
+  year={2021},
+  publisher={IOS Press},
+  doi={10.3233/FI-2021-2095}
+}
+</code></pre>
+</div></li>
+</ul>
+<h3 id="latopis-nowogrodzki-pierwszy">Latopis Nowogrodzki Pierwszy</h3>
+<p>I made a specialized static site generator to create the website for exploration of
+<a href="http://ki.wfi.uni.lodz.pl/ceraneum/latopis/html/index.html">Latopis Nowogrodzki Pierwszy (The Novgorod First Chronicle)</a> (both the original and the new translation). More information in english about the project can be found <a href="https://mappingeasterneurope.princeton.edu/item/the-novgorod-first-chronicle-polish-translation.html">here</a></p>
+<h3 id="pattern-explorer">Pattern Explorer</h3>
+<p>Complex event processing (CEP) systems  discover in the incoming event stream   occurrences of
+patterns of events (called complex events) which indicate threats, opportunities, or  necessity of some action. Sufficiently complex patterns  may become  hard to understand, and even simple patterns may contain subtle errors with respect to their intended meaning.</p>
+<p><strong><a href="https://github.com/BartoszPZielinski/PatternExplorer">Pattern Explorer</a></strong> tool helps to find errors in patterns.
+The tool compiles patterns (regular language-like) into a non-deterministic automata with variables.
+Compiled patterns can be matched with streams of events. More importantly, using extended narrowing the tool can generate effectively symbolic event sequences satisfying a pattern. Generated sequences can then be matched with another pattern to check if there are any unintended matching complex events.
+Of particular note is our efficient representation of skipped events in generated symbolic streams which avoids creation of spurious instances and reduces the search space. A user-friendly web interface provides access to most important functionalities.</p>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+    </script>
+</body>
+</html>

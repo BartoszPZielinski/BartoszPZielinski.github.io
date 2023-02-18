@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    
+    <title>Cookies | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="http://localhost/">Blog</a></li>
+            
+        
+            
+            <li><a href="http://localhost/about/">About</a></li>
+            
+        
+            
+            <li><a href="http://localhost/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="http://localhost/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="http://localhost/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="http://localhost/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="http://localhost/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+    <h2>Cookies</h2>
+    
+    <p>The author of this page does not track his visitors on his own. That said, this page is hosted on Github which uses tracking cookies (although not third-party ones). Also, the site uses Google fonts and, on some posts, several reputable javascript libraries like MathJax and Mermaidjs hosted not locally but on CDN&rsquo;s.
+Finally, some posts may contain embedded videos from Youtube. Hence, be aware that this site may contain cookies, and also other tracking devices employed by seemingly benign external resources.</p>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+    </script>
+</body>
+</html>
