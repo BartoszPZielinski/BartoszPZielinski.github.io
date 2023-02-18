@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>command line on Bartosz Zieliński</title>
-    <link>http://localhost/tags/command-line/</link>
+    <link>https://bartoszpzielinski.github.io/tags/command-line/</link>
     <description>Recent content in command line on Bartosz Zieliński</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 21 Jan 2023 09:18:30 +0100</lastBuildDate><atom:link href="http://localhost/tags/command-line/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 21 Jan 2023 09:18:30 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/tags/command-line/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Alternate Data Streams</title>
-      <link>http://localhost/posts/alternative-data-streams/</link>
+      <link>https://bartoszpzielinski.github.io/posts/alternative-data-streams/</link>
       <pubDate>Sat, 21 Jan 2023 09:18:30 +0100</pubDate>
       
-      <guid>http://localhost/posts/alternative-data-streams/</guid>
+      <guid>https://bartoszpzielinski.github.io/posts/alternative-data-streams/</guid>
       <description>Hidden data in NTFS Both files and folders in NTFS file system can have additional “forks” of data called alternate data streams (ADS-es in short). If this reminds you of forks on Mac then this is no coincidence: this feature was added to Windows NT explicitly as a support for compatibility with Mac&amp;rsquo;s HFS. In general, the ability to add additional named attachments to any file of folder is a wonderful idea.</description>
     </item>
     
