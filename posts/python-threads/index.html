@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    
+    <title>Threads in Python | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/">Blog</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/about/">About</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+<div class="post_header"><h2>Threads in Python</h2></div>
+
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#class-thread">Class Thread</a></li>
+    <li><a href="#critical-sections">Critical sections</a>
+      <ul>
+        <li><a href="#locks">Locks</a></li>
+        <li><a href="#locks-and-with">Locks and with</a></li>
+      </ul>
+    </li>
+    <li><a href="#other-synchronization-mechanisms">Other synchronization mechanisms</a></li>
+  </ul>
+</nav>
+
+    
+<p>Module <code>threading</code> in Python3 contains functions and objects supporting creation, usage and synchronization of threads. Importantly, this module is portable: scripts using <code>threading</code> should work the same way under Linux, Windows, Mac, and other operating systems.</p>
+<p>One limitation of <code>threading</code> module (at least in the CPython implementation) is
+<a href="https://realpython.com/python-gil/">a global interpreter lock</a> which must be acquired by any thread executing Python interpreter. This effectively makes it impossible for <strong>pure</strong> Python threads within the same process to execute concurrently on multiple processor cores. However, io operations release interpreter lock so using <code>threading</code> still makes sense if your program is io-bound.
+Incidentally, asyncio does not use true asynchronous operations for file-io. It turns out that while such operations are commonly supported by operating systems,
+they are not supported in a portable way. And so asyncio simulates asynchronous file input/output using threads anyway.
+Also, if your script is so computationally intensive that you want it parallelized you are probably not using pure Python, but some extensions written in C. And many of those extensions (e.g., numpy) are polite enough to <a href="https://bnikolic.co.uk/blog/python-numerical-gil">release the interpreter lock during computation</a>.
+Finally, if you really need CPU-bound pure python code to execute concurrently, you can use processes, since global interpreter lock applies to a single process only.</p>
+<h3 id="class-thread">Class Thread</h3>
+<p>In module <code>threading</code> threads are represented as instances of classes inheriting from a class <code>Thread</code> or as instances of class <code>Thread</code> itself. Note that the creation of <code>Thread</code> object does not actually create the associated thread. We will use the following (argumentless) methods of <code>Thread</code>:</p>
+<ul>
+<li><code>start()</code>: starts the associated thread. More precisely, it executes the <code>run()</code> method of the same object in a newly created system thread. The execution of this thread ends when <code>run()</code> returns. One can execute <code>start()</code> method on a given <code>Thread</code> object at most once.</li>
+<li><code>run()</code>: entrypoint to the associated thread. Descendant classes usually redefine this method.</li>
+<li><code>join()</code>: Statement <code>t.join()</code> waits until thread <code>t</code> finishes its execution.</li>
+</ul>
+<p>As a demonstration we will write now a simple script which creates a number of threads and waits until they finish. Each thread will display a sequence of messages on the terminal, and because we actually want to see some interleaving, we will introduce artificial random delays between messages.
+Thus, in addition to <code>Thread</code> class from <code>threading</code> module we will also need</p>
+<ul>
+<li><code>random()</code> function from  <code>random</code> module which returns a random float between 0.0 and 1.0,</li>
+<li>and <code>sleep()</code> function from <code>time</code> module, where <code>sleep(t)</code> makes the calling thread sleep for <code>t</code> seconds (fractional values are permitted):</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span></code></pre></div><p>Now we are ready to create a class <code>CountingThread</code>. Instances of this class will represent our message printing threads:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">CountingThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Starting thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">m</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">\&#39;</span><span style="color:#4e9a06">th iteration&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> exiting&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>The class inherits from <code>Thread</code>, defines its own one-argument constructor and redefines method <code>run()</code>. Note that constructor and all the methods (even argumentless ones) are defined with an additional argument <code>self</code> through which a reference to a class instance will be passed.
+Thus, if we have the class defined with</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Test</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">v</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">v</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#000">v</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">f</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">a</span><span style="color:#000;font-weight:bold">,</span><span style="color:#000">b</span><span style="color:#000;font-weight:bold">,</span><span style="color:#000">c</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;</span><span style="color:#4e9a06">{</span><span style="color:#000">a</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">v</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">b</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">c</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>and we create an object of this class with <code>x = Test(10)</code>, then
+<code>x.f(1,2)</code> is a syntactic sugar for <code>Test.f(x,1,2)</code>.
+When executing <code>Test(10)</code> Python interpreter first creates an empty object <code>y</code> and
+then calls <code>Test.__init__(y, 10)</code>.</p>
+<p>Let us return to our definition of <code>CountingThread</code>.
+Constructor&rsquo;s argument (i.e., <code>n</code>) is saved as a field of the instance (where it can be accessed by the associated thread). We also call a constructor
+of a parent class (explicitly passing <code>self</code> argument).
+In the <code>run()</code> method we simply print 10 messages with a random time delay between  messages. Each message contains thread and iteration number.</p>
+<p>Next, we create a list of 5 instances of <code>CountingThread</code> using list comprehension syntax and save it in variable <code>threads</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">CountingThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">n</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span></code></pre></div><p>Note that no actual threads are active at this moment (aside from the main thread). To start the threads we have to execute <code>start()</code> on each thread object:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>The whole script is in the listing below:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">CountingThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Starting thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">m</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">\&#39;</span><span style="color:#4e9a06">th iteration&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> exiting&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">CountingThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">n</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>If you run the script in Python3 interpreter (which under Windows will be called <code>python</code>, but under Linux or Mac <code>python3</code>) you will find that the execution of threads is interleaved. Note also that even though execution of a main thread
+ended after starting counting threads, the execution of the script does not end until the last thread finishes (more precisely, until the last non-demonic thread finishes, but threads are non-demonic by default).</p>
+<p>Now, if you want to wait for all the counting threads to finish and <strong>then</strong> do some more work you can add something like that to the script:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">join</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;All the threads finished&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># some more work, perhaps using the </span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># results of threads execution...</span>
+</span></span></code></pre></div><p>I noticed that in their own projects some students try to avoid code duplication by
+collapsing the last two loops into one:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">join</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>If you do that you will notice that the threads are now executed sequentially because we wait for a thread to finish before we start the next one.</p>
+<h3 id="critical-sections">Critical sections</h3>
+<p>Threads in the previous section did not communicate or shared resources. Thus, all interleavings of operations of threads were acceptable to us.  However, when they modify shared data we might want to ensure that certain interleavings do not happen. Consider the following script which runs 20 threads. Each thread increases value of a global counter, and the script reports the final counter value after the last thread finishes:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">count</span><span style="color:#000;font-weight:bold">():</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">global</span> <span style="color:#000">counter</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">target</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#000">count</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">20</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">join</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Threads finished, counter=</span><span style="color:#4e9a06">{</span><span style="color:#000">counter</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>In this case our threads are so simple  that we do not bother creating class inheriting from <code>Thread</code>. Instead, we use <code>Thread</code> class directly. Its constructor accepts a keyword argument <code>target</code>, which, if given, is expected to be a function which will be executed in the associated thread. In our case constructor receives <code>count</code> function which increases the value of a global variable <code>counter</code>.
+In Python, by default assignment to the variable in the body of a function creates a new local variable. To prevent that, and to assign to the global variable we need to declare it <code>global</code>.</p>
+<p>If you run the above script it will most probably work as expected, i.e., it will report 20 as the final value of <code>counter</code>. However there is still a very small probability that the reported value will be smaller. Why? Because <code>counter=counter+1</code> is not an atomic operation. It consists of reading the value of a variable, and then
+adding one to it, and writing the new value. Those operations in different threads can interleave, and hence it is possible (if not very probable) that two threads read the same value and then write the same incremented value. This leads to lost increments.
+The fact that it is not very probable is very bad because it means that some errors may be missed by testing and lay undiscovered for years. Until they hit hard.</p>
+<p>To increase the probability of lost increments, let us introduce random time delays between
+reading a global variable and writing its new value (we also introduce a random delay between start of a thread and reading the counter):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">count</span><span style="color:#000;font-weight:bold">():</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">global</span> <span style="color:#000">counter</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#ce5c00;font-weight:bold">*</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">x</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">x</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">x</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">target</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#000">count</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">20</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">join</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Threads finished, counter=</span><span style="color:#4e9a06">{</span><span style="color:#000">counter</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>Now, instead of 20, the final value of a counter is usually around 10.
+Now it is clear that something is wrong here, and we need to ensure each counter increment happens without interleaving with counter increments in other threads.
+Usually it is framed in terms of <strong>critical sections</strong>.</p>
+<p>A <strong>critical section</strong> can be understood as a  section  of  code  such that more than one thread or process must not simultanously execute code in this section. This property is called <strong>mutual exclusion</strong>. Here by <em>execute</em> I mean that the thread&rsquo;s program counter points to some line of code in the critical section. The thread may be suspended, sleeping, waiting for io, etc., but still no other thread may enter the critical section until the program counter of the thread currently in the critical section is updated to point to some instruction outside the critical section.
+The idea is that each critical section is associated with some shared resources, and the access to those resources should happen without interleaving with accesses to the same resources in other threads.</p>
+<p>Usually we ensure mutual exclusion property protecting critical sections with locks.</p>
+<h4 id="locks">Locks</h4>
+<p><strong>Locks</strong> are special system objects which can be <strong>acquired</strong> only by a single thread at a time. A thread which acquires a lock holds it until it <strong>releases</strong> it.
+A  thread which tries to acquire a lock which is already held by another thread must is put to sleep until the current holder releases the lock when it tries to acquire it again. We can trust that the implementation guarantees that attempts to acquire a single lock do not lead to starvation (this is <strong>not true</strong> in case of multiple locks when threads can easily starve or even deadlock).</p>
+<p>The idea of using locks to protect the critical section is that there will be a lock associated with each critical section. A thread then is obliged to acquire the asssociated lock before entering the critical section, and it releases it when leaving the critical section:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># some code outside critical section...</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span> <span style="color:#8f5902;font-style:italic"># we acquire the lock</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># code inside critical section...</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span> <span style="color:#8f5902;font-style:italic"># we release the lock</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># code outside critical section...</span>
+</span></span></code></pre></div><p>This works because only one thread can acquire and hold a given lock. When a thread is inside critical section it holds a lock. Any other thread trying to enter a critical section will have to acquire the same lock which will not succeed after it is released by the thread currently holding it, which will not happen until that thread leaves the critical section.</p>
+<p>In Python3 module <code>threading</code> provides two types of locks represented, respectively, by instances of classes <code>Lock</code> and <code>RLock</code>. Both classes support methods <code>acquire()</code> and <code>release()</code>. The differences between them are somewhat subtle, but occassionally important:</p>
+<ul>
+<li><code>Lock</code> can be released by any thread, not necessarily by the one which holds it. Thus instances of <code>Lock</code> are usable as a more general synchronization primitives than plain mutexes.</li>
+<li><code>RLock</code> can be only be released by the thread which acquired. However, a given <code>RLock</code> can be acquired multiple times by a given thread, only it must be released the same number of times it was acquired (hence the name ‐ recursive lock). This is in contrast to <code>Lock</code> which deadlocks a thread which acquires it while already holding it. Why do you want a recursive lock? It is perfect for implementing monitors: objects where each method is a part of the same critical section associated with this object (think <em>synchronized</em> classes in Java). We simply sandwich the code of each method with acquiring  the lock and releasing it. This would not work with non-recursive locks when one method can call another: then we would have a nested acquire-release pair of operations.</li>
+</ul>
+<p>Let us use <code>RLock</code> to correct our counter code from above:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">RLock</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">count</span><span style="color:#000;font-weight:bold">():</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">global</span> <span style="color:#000">counter</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#ce5c00;font-weight:bold">*</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span> <span style="color:#8f5902;font-style:italic"># we acquire lock before modifying the counter</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">x</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">counter</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">x</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span> <span style="color:#8f5902;font-style:italic"># we release the lock after modifying the counter</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">x</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">target</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#000">count</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">20</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">join</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Threads finished, counter=</span><span style="color:#4e9a06">{</span><span style="color:#000">counter</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>Now it reports only 20 in the end (no increments lost).
+One subtlety in the code above is that it is vital that the same <code>RLock</code> object is used by all the threads. If each thread created its own lock there would be no synchronization, and it is another error commonly made by students (or by exhausted professionals).</p>
+<h4 id="locks-and-with">Locks and with</h4>
+<p>Locks provided by <code>threading</code> are <a href="https://realpython.com/python-with-statement/">context managers</a>, i.e., they can be used with <code>with</code>. More precisely, instead
+of</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># code in critical section</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>we may write</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">lock</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#8f5902;font-style:italic"># code in critical section</span>
+</span></span></code></pre></div><p>and <code>lock.acquire()</code> and <code>lock.release()</code> will be executed automatically at the beginning and the end, respectively, of the <code>with</code> block. The advantage (aside from the shorter code) is that it is now impossible to forget about releasing an acquired lock. Also, <code>lock.release()</code> will be called even if the <code>with</code> block contains a <code>return</code> statement or throws an exception. The latter may or may not be an advantage as deadlocking the system may be preferable to releasing the lock while, perhaps, leaving the shared date in an inconsistent state.</p>
+<p>There is nothing mysterious in <code>with</code>. You can use <code>with</code> with any object which implements two argumentless methods: <code>__enter__()</code> and <code>__exit()__</code>. The first one is called when entering the block, the other when leaving. In case of locks in the <code>threading</code> module, <code>__enter__()</code> and <code>__exit()__</code> methods of lock classes simply call <code>acquire()</code> and <code>release()</code>, respectively.</p>
+<h3 id="other-synchronization-mechanisms">Other synchronization mechanisms</h3>
+<p>The problem of mutual exclusion is the most important, but by far not the only synchronization problem. Locks are specialized tools for solving mutual exclusion problem and protecting critical sections. More general synchronization problems require stronger synchronization objects, such as <strong>semaphores</strong> or <strong>condition variables</strong>.</p>
+
+
+<div class="post_meta">
+    <b>Timestamp:</b> February 25, 2023 <br>
+    <b>Tags:</b> 
+<a href="https://bartoszpzielinski.github.io/tags/python/">#python</a>
+,
+<a href="https://bartoszpzielinski.github.io/tags/concurrency/">#concurrency</a>
+
+</div>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+    </script>
+</body>
+</html>

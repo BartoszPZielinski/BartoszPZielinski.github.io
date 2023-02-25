@@ -6,7 +6,17 @@
     <description>Recent content in Posts on Bartosz Zieliński</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 21 Jan 2023 09:18:30 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 25 Feb 2023 09:59:29 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Threads in Python</title>
+      <link>https://bartoszpzielinski.github.io/posts/python-threads/</link>
+      <pubDate>Sat, 25 Feb 2023 09:59:29 +0100</pubDate>
+      
+      <guid>https://bartoszpzielinski.github.io/posts/python-threads/</guid>
+      <description>Module threading in Python3 contains functions and objects supporting creation, usage and synchronization of threads. Importantly, this module is portable: scripts using threading should work the same way under Linux, Windows, Mac, and other operating systems.
+One limitation of threading module (at least in the CPython implementation) is a global interpreter lock which must be acquired by any thread executing Python interpreter. This effectively makes it impossible for pure Python threads within the same process to execute concurrently on multiple processor cores.</description>
+    </item>
+    
     <item>
       <title>Alternate Data Streams</title>
       <link>https://bartoszpzielinski.github.io/posts/alternative-data-streams/</link>
