@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="How to use condition variables to implement barriers">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    
+    <title>Condition Variables, Part II | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/">Blog</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/about/">About</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (3)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (3)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+<div class="post_header"><h2>Condition Variables, Part II</h2></div>
+
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#gates">Gates</a></li>
+    <li><a href="#barriers">Barriers</a>
+      <ul>
+        <li><a href="#barriers-for-n-processes">Barriers for n-processes</a></li>
+        <li><a href="#reusable-barriers">Reusable barriers</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+    
+<p>In a <a href="https://bartoszpzielinski.github.io/posts/condition-variables/">previous post about condition variables</a> we introduced condition variables in Python, and we have shown how can they be used to solve producer-consumer problem. In this post we will tackle the problem of synchronizing threads so that they all reach certain milestone in the code before proceeding further, i.e., we will show how to implement <strong>barriers</strong> using condtion variables. Before that, we introduce <strong>gates</strong>: very useful synchronization primitives, easily implementable using condition variables. Here we use gates to implement barriers. Gates will also appear in a future post about readers-writers problem.</p>
+<p>I learned about barriers from
+<a href="https://greenteapress.com/wp/semaphores/">The Little Book of Semaphores</a> by
+Allen B. Downey (of course the book uses semaphores and here I use condition variables).</p>
+<h3 id="gates">Gates</h3>
+<p>A <strong>gate</strong> (sometimes also called <strong>turnstile</strong>) is a synchronization object
+which can be either open or closed. Threads can simply pass through an open gate, but they have to sleep at the closed one, while waiting for the gate to open.
+More specifically, gates should provide three argumentless
+methods:</p>
+<ul>
+<li><code>open()</code> which opens the gate</li>
+<li><code>close()</code> which closes the gate</li>
+<li><code>tryPass()</code> which does nothing (well, nothing observable) if the gate is open and returns immediately. When the gate is closed, it suspends the thread and returns only when the gate is opened.</li>
+</ul>
+<p>Gates are usually not among standard synchronization objects provided by libraries. However, they can be easily implemented using condition variables. For example, the following Python class implements gate interface:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Gate</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">is_open</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#204a87;font-weight:bold">False</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">is_open</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">is_open</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">open</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">is_open</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#204a87;font-weight:bold">True</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify_all</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">close</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">is_open</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#204a87;font-weight:bold">False</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">is_open</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>Thus, objects of this class have two fields: the boolean field <code>is_open</code>,
+true if the gate is open and false otherwise, and  condition variable <code>cond</code>.
+Initial state of the gate is passed as an optional argument to the constructor (<code>False</code> by default, i.e., the gate is created closed by default).
+All methods are executed within a critical section protected by a lock associated with <code>cond</code>:</p>
+<ul>
+<li><code>open()</code> sets <code>is_open</code> field to <code>True</code> and notifies all waiting threads. In this case <code>notify_all()</code> is used because once the gate is open any number of threads can pass through it (the passing threads do not close the gate behind them).</li>
+<li><code>close()</code> sets <code>is_open</code> to <code>False</code> closing the gate.</li>
+<li><code>tryPass()</code> simply waits for the gate to open using <code>cond</code> and then it returns.</li>
+</ul>
+<h3 id="barriers">Barriers</h3>
+<p>We will now use gates to construct various kinds of barriers.</p>
+<h4 id="barriers-for-n-processes">Barriers for n-processes</h4>
+<p>Suppose we have <code>n</code> threads, each executing a program of the form:</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i) --> B(Part B of thread i)
+</div>
+<p>As a concrete illustration consider the following program, where parts <code>A</code> and <code>B</code> just print respective messages on the console. As usual, we have also thrown in some random time delays for better effect:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Thread&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;executed A&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Thread&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;executed B&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">n_threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">10</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">m</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n_threads</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">)</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Suppose that for some reason we want parts <code>A</code> of all threads to finish
+execution before any of the threads starts its <code>B</code> part.  To ensure that, we need some additional sychronization between threads (the unconvinced reader may run the above script as a demonstration). The obvious idea is to use a gate object described in the previous section, initially closed:</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i)  --> C[Gate]
+   C --> B(Part B of thread i)
+</div>
+<p>A closed gate will not allow threads to go to part B. It only remains to find
+a way to open the gate after all <code>n</code> threads have finished their <code>A</code>-parts.
+The solution  does not require any central authority or separate control thread.
+We need a shared integer variable <code>m</code>, initialized to the number of threads.
+Each thread decrements <code>m</code> after finishing its <code>A</code> part.
+When <code>m==0</code> we know that all <code>n</code> threads decremented <code>m</code>, and, therefore, also executed <code>A</code>. Hence,
+the thread which sees <code>m==0</code> can open the gate:</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i)  --> D[m -= 1, if now m == 0 open gate]
+   D --> C[Gate]
+   C --> B(Part B of thread i)
+</div>
+<p>Counting from <code>n</code> to <code>0</code> is more convenient than counting from 0 to <code>n</code> because you do not have to remember <code>n</code>.</p>
+<p>We encapsulate the barrier code inside a class with the following definition:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Barrier</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Gate</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">-=</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">==</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">open</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p><code>Barrier</code>&rsquo;s constructor  requires the number of threads as an argument. The constructor creates a <code>Gate</code> object and
+a lock object, the latter to protect the body of <code>tryPass()</code> method.
+The <code>tryPass()</code> method decrements the counter (<code>self.m</code>) by 1, and, if the resulting value is 0, it opens the gate. Then, outside critical section, it calls <code>tryPass()</code> on its gate.</p>
+<p>Now we can modify the <code>MyThread</code> class from the example script at the beginning of this section by creating a global <code>Barrier</code> object (<code>barrier</code>) and placing  <code>barrier.tryPass()</code> between parts <code>A</code> and <code>B</code> of our threads (recall that <code>n_threads</code> is the number of threads):</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">barrier</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Barrier</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n_threads</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Thread&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;executed A&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">barrier</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Thread&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;executed B&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>If we now execute the modified script (do not forget to include definitions of <code>Gate</code> and <code>Barrier</code> classes and to import <code>Condition</code> and <code>RLock</code> from <code>threading</code>), we will see that parts <code>A</code> of all the threads execute first (in some random order), and only then parts B.</p>
+<h4 id="reusable-barriers">Reusable barriers</h4>
+<p>Suppose we have <code>n</code> threads, each executing a program of the form:</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i) --> B(Part B of thread i)
+   B --> A
+</div>
+<p>i.e. part <code>A</code> is performed in a loop alternating with part <code>B</code>.
+As an example consider the following python program where parts <code>A</code> and <code>B</code>
+just print the respective messages on the console. As usual, we make threads sleep for a random time between the messages to make interleaving more probable:<span id="prog-barr-loop"></span></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> executed A&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> executed B&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">m</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Suppose now that for some reason we want</p>
+<ul>
+<li>the first iteration of all threads finished before the second iteration of any thread started, the second before the third, etc.,</li>
+<li>in each iteration, parts A of all threads finished before part B of any thread started (in the same iteration).</li>
+</ul>
+<p>It seems natural to use two gates between parts A and B:</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i) --> b1[Gate 1]
+   b1 --> B(Part B of thread i)
+   B --> b2[Gate 2]
+   b2 --> A
+</div>
+<p>Initially gate 1 is closed and gate 2 is open. When threads finish their <code>A</code> parts in the first iteration, we  <strong>first</strong> close gate 2 and <strong>then</strong> we open gate 1. The threads can now execute part <code>B</code>, but none of them will jump to part <code>A</code> in the second iteration. When all threads have finished part <code>B</code>, we <strong>first</strong> close gate 1 and <strong>then</strong> open gate 2, allowing execution of part <code>A</code> in the second iteration but not the start of part <code>B</code>. We continue in the same way for subsequent iterations. As you can see, the pair of gates 1 and 2 acts as a cyclic airlock.</p>
+<p>It remains to figure out how to open and close the gates. As in the previous section, we will count threads, where the <code>n</code>th thread opens and closes the appropriate gates. Instead of two separate counters for each gate we will use a single counter <code>m</code>
+which counts from <code>n</code> to 0 at the first gate, and from <code>0</code> to <code>n</code> at the second gate, as in the diagram below (initially <code>m == n</code>):</p>
+<div class="mermaid">graph TD
+   A(Part A of thread i) --> c1[m -= 1, if m == 0<br> then close gate 2<br> and open gate 1]
+   c1 --> b1[Gate 1]
+   b1 --> B(Part B of thread i)
+   B --> c2[m += 1, if m == n<br> then close gate 1<br> and open gate 2]
+   c2 --> b2(Gate 2)
+   b2 --> A
+</div>
+<p>Accordingly, we create a <code>ReusableBarrier</code> class encapsulating our reusable barrier:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">ReusableBarrier</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span>  <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate1</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Gate</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">False</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate2</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Gate</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">True</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span> 
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span> 
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">tryPass1</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">-=</span> <span style="color:#0000cf;font-weight:bold">1</span> 
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">==</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate2</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">close</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate1</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">open</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate1</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">tryPass2</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">+=</span> <span style="color:#0000cf;font-weight:bold">1</span> 
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">==</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate1</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">close</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate2</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">open</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">gate2</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Now we can modify the <code>MyThread</code> class from the example script at the beginning of this section:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">barrier</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">ReusableBarrier</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n_threads</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyThread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> executed A&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">barrier</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass1</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> executed B&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">barrier</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">tryPass2</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>First, we create a global, shared <code>ReusableBarrier</code> object (<code>barrier</code>).
+Recall that <code>n_threads</code> is the number of threads.
+Then we place a call to  <code>tryPass1()</code> between part <code>A</code> and <code>B</code> inside a loop, and also a call to <code>tryPass2()</code> after part <code>B</code> and before starting new iteration.</p>
+<p>When running the script do not forget to include definitions of <code>Gate</code> and <code>ReusableBarrier</code> classes, and to import <code>Condition</code> and <code>RLock</code> from
+module <code>threading</code>.</p>
+
+
+<div class="post_meta">
+    <b>Timestamp:</b> March 6, 2023 <br>
+    <b>Tags:</b> 
+<a href="https://bartoszpzielinski.github.io/tags/python/">#python</a>
+,
+<a href="https://bartoszpzielinski.github.io/tags/concurrency/">#concurrency</a>
+
+</div>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

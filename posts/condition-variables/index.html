@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Introduction to condition variables in Python (module threading). Also, how to use condition variables to solve producer-consumer problem, both with bounded and unbounded buffer">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    
+    <title>Condition Variables, Part I | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/">Blog</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/about/">About</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (3)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (3)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+<div class="post_header"><h2>Condition Variables, Part I</h2></div>
+
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#producer-consumer-problem">Producer-Consumer problem</a>
+      <ul>
+        <li><a href="#producer-consumer-with-unbounded-buffer">Producer-Consumer with unbounded buffer</a></li>
+        <li><a href="#producer-consumer-with-bounded-buffer">Producer-Consumer with bounded buffer</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+    
+<h3 id="introduction">Introduction</h3>
+<p>In a <a href="https://bartoszpzielinski.github.io/posts/python-threads/">previous post about threads</a>
+we introduced locks from <code>threading</code> module in Python.
+Locks are a specialized mechanism used to protect a critical section. More general synchronization patterns require the use of other mechanisms such as semaphores, or condition variables discussed here.</p>
+<p><strong>Condition variables</strong> are a synchronization mechanism used, as the name suggests, to suspend the operation of a thread until a certain condition (usually concerning shared data) is met. A condition variable is always used in conjunction with a lock.</p>
+<p>The problem solved by condition variables is as follows: An operation on shared data can only be executed when certain precondition involving the shared data is satisfied. Correct verification of precondition may require exclusive access to shared data, hence precondition like operation itself should be evaluated inside critical section. If the precondition is not met, the thread cannot simply wait for its satisfaction inside the critical section as this would prevent any change to shared data, and the thread would wait in vain, probably deadlocking the system. Instead the thread should exit the critical section, and attempt to enter it again when there is a chance that the precondition is satisfied. Of course this begs the question how the thread should know when to reenter the critical section since in order to observe any change to shared data it should be in the critical section already, and that is where condition variables come in.</p>
+<p>We can illustrate this abstract discussion with concreate example:
+Suppose we have a shared integer variable <code>N</code> with an initial value of 0, and two kinds of threads:</p>
+<ul>
+<li>Threads adding 1 to <code>N</code></li>
+<li>Threads subtracting 1 from <code>N</code> if <code>N&gt;0</code></li>
+</ul>
+<p>Addition is unconditional. However, subtraction has a precondition which ensures that <code>N</code> never becomes negative. Of course, any access to <code>N</code> should happen only inside a critical section, hence we need a lock:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>So, how do we implement modifications of <code>N</code> in both kinds of threads? Addition is unproblematic: we simply add 1 to <code>N</code> in a critical section:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>It is less clear how to implement subtracting threads. For instance, the following naive attempt practically guarantees deadlock:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">while</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">&lt;=</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#204a87;font-weight:bold">pass</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">-</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>The problem is that if <code>N==0</code> when the above thread enters the critical section
+then the thread enters a loop which will exit only when another thread increments the value <code>N</code>. However, no other thread will have a chance to increment <code>N</code> (or enter the critical section at all) because the subtracting thread is stuck in the infinite loop inside the critical section.
+Clearly, the lock should be released on each turn of the loop, e.g.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">while</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">&lt;=</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">0.1</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">-</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>No deadlock this time, but the above solution is very inefficient.
+Thread sleeps for 0.1s after releasing the lock,  hoping that some adding thread will use this time to enter the critical section and increment <code>N</code>. The problem is that 0.1s is completely arbitrary (too much?, not enough?, optimal? - we have no way of knowing) and it may well happen that even if some other thread increments <code>N</code>, still another thread may decrement it again before our thread wakes again, re-acquires the lock, and re-checks the precondition to find it still false. This, aside from being inefficient may easily lead to starvation.
+So it would be nice if there was a mechanism which allows a thread which just modified a shared data to notify threads waiting for some condition on the shared data to become true, that it is now a good time to try again. The role of such a mechanism is fulfilled by <strong>condition variables</strong>. Like locks, this is a general mechanism available in most languages and environments that support multi-threaded and multi-process programming. In Python, they are provided as objects of class <code>Condition</code> by  module <code>threading</code>. Other environments provide equivalent APIs.</p>
+<p>As remarked above, condition variables are always associated with a lock. A lock object (either <code>Lock</code> or <code>RLock</code>) can be passed to <code>Condition</code>&rsquo;s constructor. Several condition variables may share the same lock, which is useful if various threads wait for different conditions associated with the same data.
+If you pass any lock to <code>Condition</code>&rsquo;s constructor, a new private <code>RLock</code> will be created automatically and associated with the constructed condition variable.</p>
+<p>Condition variables accept the following methods:</p>
+<ul>
+<li>
+<p><code>wait()</code> does the following things in sequence: it</p>
+<ol>
+<li>releases the lock associated with the condition variable (if the calling thread does not have the lock, a <code>RuntimeError</code> exception is thrown),</li>
+<li>suspends the calling thread until another thread calls the <code>notify()</code> or <code>notify_all()</code> on the same condition variable</li>
+<li>wakes the calling thread and re-acquires the associated lock,</li>
+<li>returns <code>True</code> to the calling thread</li>
+</ol>
+<p>To wait using condition variable <code>cond</code> for the satisfaction of a precondition <code>C</code> we can use the loop</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">while</span> <span style="color:#204a87;font-weight:bold">not</span> <span style="color:#000">C</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Note that we still need to use the loop, as we have no guarantee that, after the thread re-acquires the lock, the precondiotion will be still satisfied (assuming it was satisfied at all when the thread was <em>notified</em> about the shared data change).</p>
+</li>
+<li>
+<p><code>wait_for(pred)</code>, where <code>pred</code> is something which behaves like argumentless function returning a boolean value. This method allows us to save the effort of writing a loop when waiting for a condition. More precisely, if <code>cond</code> is a condition variable and <code>pred</code> is a function returning boolean value, then the call</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">pred</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>is more or less equivalent to</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">while</span> <span style="color:#204a87;font-weight:bold">not</span> <span style="color:#000">pred</span><span style="color:#000;font-weight:bold">():</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>which is shorter. The rub is  that now we need a function, and it might seem that we just traded a simple and readable loop for a weird method call accompanied by a function definition. Fortunately, we have <a href="https://realpython.com/python-lambda/">lambdas</a>: We can replace a loop from the previous point by</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#000">C</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div></li>
+<li>
+<p><code>notify()</code> wakes up one of the threads waiting under this condition variable. The calling thread must have the associated lock  or <code>RuntimeError</code> exception will be thrown.</p>
+</li>
+<li>
+<p><code>notify_all()</code>: calling this method wakes up <strong>all</strong> threads waiting under this condition variable. The calling thread must have the associated lock  or <code>RuntimeError</code> exception will be thrown.</p>
+</li>
+<li>
+<p><code>acquire()</code> and <code>release()</code> call <code>acquire()</code> and <code>release()</code>, respectively, on the associated lock object.</p>
+</li>
+</ul>
+<p>In addition, condition variables in Python are context managers. If <code>cond</code> is a condition variable then</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic">#some code</span>
+</span></span></code></pre></div><p>calls <code>cond.acquire()</code> before entering the <code>with</code> block and <code>cond.release()</code> after exiting it.</p>
+<p>You might wonder why we need both <code>notify_all()</code> and <code>notify()</code>. Sometimes executing some action in critical section invalidates its precondition, and sometimes it does not. In the first case it does not make sense to wake up all the waiting threads since only one of them will get executed. In the second case waking up all the waiting threads is usually the best course of action.</p>
+<p>Both <code>wait()</code> and <code>wait_for()</code> methods accept an optional named argument called <code>timeout</code> (a float value is expected). If <code>timeout</code> is given and
+<code>wait()</code> or <code>wait_for()</code> do not re-acquire locks within <code>timeout</code> seconds then they
+return <code>False</code>. We will not use timeouts here.</p>
+<p>Since <code>Condition</code> objects can pass <code>acquire()</code> and <code>release()</code> to their associated locks, usually it does not make sense to store references to lock objects associated to condition variables, or to use them directly. Using only condition variables simplifies code and makes using the wrong lock less likely.</p>
+<p>To illustrate the above, let us now return to our example of threads incrementing and decrementing a shared integer variable. Assume that we have created a lock and condition objects as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">cond</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>Then the critical section of threads incrementing <code>N</code> by 1 can be implemented as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>This is the same as before, except that after incrementing <code>N</code> we notify one of the threads waiting for <code>N</code> to be bigger than 0.
+Note that we use <code>notify()</code> method and not <code>notify_all()</code> because after adding just 1 it doesn&rsquo;t make sense to wake up more than one decrementing thread.</p>
+<p>Decrementing threads have to wait using condition variable for <code>N</code> to become greater than 0:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">while</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">&lt;=</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span> <span style="color:#8f5902;font-style:italic"># we wait for N &gt; 0</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">-</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">lock</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>We can significantly simplify the above code. First, we can get rid of explicit lock object and simply use the condition variable and the lock object automatically created by the constructor:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">cond</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>We can also utilize the fact that <code>Condition</code> objects are context managers, as well as  use <code>wait_for()</code> instead of explicit while loop:</p>
+<div class="columns">
+    
+    <div class="column">
+      <p>Threads incrementing <code>N</code> by 1:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div>
+    </div>
+    
+    <div class="column">
+      <p>Threads conditionally decrementing <code>N</code> by 1:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#000">N</span><span style="color:#ce5c00;font-weight:bold">&gt;</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">-</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span></code></pre></div>
+    </div>
+    
+  </div>
+  
+<p>To actually see this code in action try the following script:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">Condition</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">choice</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">cond</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">inc</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">global</span> <span style="color:#000">N</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">\&#39;</span><span style="color:#4e9a06">th increment, N = </span><span style="color:#4e9a06">{</span><span style="color:#000">N</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span> 
+</span></span><span style="display:flex;"><span>        <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">dec</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">global</span> <span style="color:#000">N</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06"> tries </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">\&#39;</span><span style="color:#4e9a06">th decrement, N = </span><span style="color:#4e9a06">{</span><span style="color:#000">N</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">. Waiting ...&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#000">N</span><span style="color:#ce5c00;font-weight:bold">&gt;</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Thread </span><span style="color:#4e9a06">{</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">\&#39;</span><span style="color:#4e9a06">th decrement, N = </span><span style="color:#4e9a06">{</span><span style="color:#000">N</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">N</span> <span style="color:#ce5c00;font-weight:bold">-</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">get</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">f</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">choice</span><span style="color:#000;font-weight:bold">([</span><span style="color:#000">inc</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">dec</span><span style="color:#000;font-weight:bold">])</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">h</span><span style="color:#000;font-weight:bold">():</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">f</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span><span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#000">h</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">target</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">get</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">))</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">n</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Function <code>choice()</code> from module <code>random</code> picks at random one element of a list passed as its argument. Above we use it to pick either incrementing or decrementing function. Note the use of a <a href="https://en.wikipedia.org/wiki/Closure_(computer_programming)">closure</a> in the definition of <code>get(n)</code> which creates the main function of <code>n</code>-th thread.</p>
+<p>The above script may occasionally deadlock if all incrementing threads already exited and only decrementing threads are active.</p>
+<h3 id="producer-consumer-problem">Producer-Consumer problem</h3>
+<p>We have a shared buffer in memory where you can put items in and retrieve them.
+Retrieving an item removes it from the buffer.
+There are two variants of the <strong>producer-consumer</strong> problem:</p>
+<ul>
+<li>with <strong>unbounded buffer</strong> that can hold any number of elements</li>
+<li>and with a <strong>bounded buffer</strong> that allows you to place only a finite number of elements. When the buffer is full, an element must be removed from it before a new one can be inserted.</li>
+</ul>
+<p>We also have two types of threads (or processes):</p>
+<ul>
+<li><strong>Producers</strong> who produce the data and put it as items in the buffer</li>
+<li><strong>Consumers</strong> that take items from the buffer and consume them.</li>
+</ul>
+<p>Of course, for producers and consumers to function properly, some obvious <strong>synchronization constraints</strong> must be met:</p>
+<ol>
+<li>To avoid buffer corruption, we should ensure that only one thread  at a time modifies the shared buffer, and therefore buffer operations should be performed in the critical section.</li>
+<li>A consumer  cannot fetch an item from an empty buffer. Instead, it should wait until some producer puts a new item in the buffer.</li>
+<li>When the buffer is bounded, a producer cannot store a new item in the full buffer. Instead, it should  wait for some consumer to fetch some item from the buffer to free up the space.</li>
+</ol>
+<p>Locks can  be used to enforce the first constraint above. The other two synchronization constraints require the  use of condition variables.</p>
+<p>In the next subsection, we present a solution to the producer-consumer problem with an unbounded buffer (where we only have the first two constraints). Next,  we will solve  producer-consumer problem with bounded buffer (where we need to force all three constraints).</p>
+<h4 id="producer-consumer-with-unbounded-buffer">Producer-Consumer with unbounded buffer</h4>
+<p>First, we need to decide how to implement the shared buffer.
+FIFO queue is the usual choice.
+Python provides efficient FIFOs in the form of objects of the <code>Queue</code> class from the <code>queue</code> module. Unfortunately, <code>Queue</code> is already adapted to multi-threaded environment. In particular, <code>Queue</code> implements synchronization constraints described above, so it is not suitable for teaching implementation of those constraints.</p>
+<p>Instead, we will use ordinary lists encapsulated within an object of a class that provides a queue interface. In Python, if x is a list, x.append(y) adds y to the end of the list, and x.pop(i) removes the item at position i from the list (and returns the value of that item). The encapsulating class (without synchronization) looks like this:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyQueue</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">x</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">append</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">x</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">dequeue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">pop</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__str__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Queue&lt;</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&gt;&#39;</span>
+</span></span></code></pre></div><p>Thus, the objects of this class store a list in a private field <code>_buf</code>. The list is initially empty. Calling <code>enqueue(x)</code> on a buffer adds <code>x</code> at the end of <code>_buf</code>. Calling <code>dequeue()</code> removes the first element and returns it. Note that this is a very inefficient implementation: unlike in many other languages, lists in Python are not linked structures but ordinary arrays  instead. Thus, while referring to a list element by index can be executed in a (very small) constant time, any operation which changes list size will carry a much larger time penalty, sometimes requiring a complete copy of the array. It is not that bad all the time as, e.g., <a href="https://towardsdatascience.com/how-lists-in-python-are-optimised-internally-for-better-performance-847c8123b7fa">CPython will use overallocation</a> to avoid frequent resizing, and dynamic arrays can sometimes be resized using <a href="https://en.cppreference.com/w/c/memory/realloc"><code>realloc()</code></a> without a full copy, but it is still worse than a linked structure.</p>
+<p>The class above contains an additional method <code>__str__()</code>. This is the method which various output functions in Python (e.g., <code>print()</code>, interpolated strings, etc.) call on objects automatically to convert them to human-readable strings. In this case we display the contents of the underlying list <code>_buf</code> surrounded by <code>Queue&lt;...&gt;</code>.</p>
+<p>Below, there is a full script testing the above implementation of <code>MyQueue</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">threading</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">Thread</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">time</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">sleep</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">from</span> <span style="color:#000">random</span> <span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyQueue</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">x</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">append</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">x</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">dequeue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">pop</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__str__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Queue&lt;</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&gt;&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Producer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">queue</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">queue</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Producer </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">((</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">))</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Consumer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">queue</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">queue</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">n</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">msg</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">dequeue</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Consumer </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, iteration </span><span style="color:#4e9a06">{</span><span style="color:#000">i</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, msg=</span><span style="color:#4e9a06">{</span><span style="color:#000">msg</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, </span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#39;</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">queue</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">MyQueue</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Producer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">queue</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">n</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">+=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">Consumer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">queue</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">n</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">n</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Later we will reuse the same script, just modifying <code>MyQueue</code> class.
+The script creates 10 consumer and producer threads. Each producer thread adds to the queue a pair <code>(self.n, i)</code> consisting of a thread identifier (<code>self.n</code>) and an iteration index (<code>i</code>). In the line</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">((</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">))</span>
+</span></span></code></pre></div><p>note an additional pair of parentheses: We are passing a single argument to
+<code>enqueue()</code> which is a pair. On the other hand,</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">queue</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">n</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>would have called <code>enqueue()</code> with two arguments, which would be wrong.</p>
+<p>Each consumer thread consumes a single element from the buffer 10 times.
+Both consumer and producer threads display appropriate diangnostic messages (including state of the underlying message list). Also, both producers and consumers introduce artificial sleeping to force some interleaving of operations. Unfortunately, since consumer threads do not check if the queue is non-empty before executing <code>dequeue()</code> (and neither does the method itself before executing <code>pop</code>), the script above will almost always raise an exception. Clearly, we need some synchronization.</p>
+<p>Obviously, we need a lock to protect operations on a buffer as a critical section. In actuality, both <code>pop()</code> and <code>append()</code>  are thread-safe (or so I understand), but we have to use locks in order to use condition variables anyway.</p>
+<p>Secondly, we need a condition variable associated with the aforementioned lock for consumers  to wait until
+the queue becomes non-empty. A producer should notify at most a single consumer about added element (it makes no sense to notify more consumers, as the first one will consume this single added element). Assume that we have a condition variable <code>cond</code>.
+Then a general scheme for solving the producer-consumer problem with unbounded buffer is as follows:</p>
+<div class="columns">
+    
+    <div class="column">
+      <p>Producer code:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Produce x</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># Put x in the shared buffer </span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div>
+    </div>
+    
+    <div class="column">
+      <p>Consumer code:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span> <span style="color:#000">Shared_Buffer_Is_Not_Empty</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># Take the next element from the shared buffer </span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># and assign it to x</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># consume x</span>
+</span></span></code></pre></div>
+    </div>
+    
+  </div>
+  
+<p>Thus, we can add synchronization to our queue class as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyQueue</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[]</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">x</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">append</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">x</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">dequeue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">pop</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__str__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Queue&lt;</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&gt;&#39;</span>
+</span></span></code></pre></div><p>Observe the line:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">cond</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>To understand what happens here, note that in Python, if you use a list where boolean value is expected then an empty list is treated as <code>False</code>, and non-empty list is treated as
+<code>True</code>. Thus, instead of using explicit conditions, like <code>self._buf != []</code>, we simply make the list speak for itself.</p>
+<h4 id="producer-consumer-with-bounded-buffer">Producer-Consumer with bounded buffer</h4>
+<p>First let us present a general solution of producer-consumer problem with bounded buffer, and then we will describe bounded buffer implementation itself.</p>
+<p>Because operations on shared buffer should be performed inside critical section we need a lock. Also, there are two separate preconditions:</p>
+<ul>
+<li>producer can place data in the shared buffer only if the latter is not full,</li>
+<li>consumer can consume data from the shared buffer only if the latter is not empty.</li>
+</ul>
+<p>This suggests using two separate condition variables (<code>full</code> for the first precondition, <code>empty</code> for the second). However, since we are working on the same shared data, both condition variables should share a lock:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">full</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">empty</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">)</span>
+</span></span></code></pre></div><p>Then each producer and consumer should wait for the respective precondition to be satisfied, and upon completion, producer should notify at most one consumer that there is one more element in the buffer, and consumer should notify at most one producer that there is one more free place in the buffer. There is no point in informing more than one consumer waiting at the empty buffer about a single element added, and, similarly, there is no point in informing more than one producer waiting at a full buffer that there is one more free place. This leads to the following solution:</p>
+<div class="columns">
+    
+    <div class="column">
+      <p>Producer code:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># produce x</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">full</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">full</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#000">Buffer_Is_Not_Full</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># add x to buffer</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">empty</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div>
+    </div>
+    
+    <div class="column">
+      <p>Consumer code:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">with</span> <span style="color:#000">empty</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">empty</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#000">Buffer_Is_Not_Empty</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># remove next element from </span>
+</span></span><span style="display:flex;"><span>  <span style="color:#8f5902;font-style:italic"># the buffer and store it in x</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#000">full</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># consume x</span>
+</span></span></code></pre></div>
+    </div>
+    
+  </div>
+  
+<p>Note that in both cases we are protecting critical section with the same lock
+(shared by both condition variables).</p>
+<p>Now let us implement the shared buffer itself.</p>
+<p>In this case we will implement our buffer as a <a href="https://en.wikipedia.org/wiki/Circular_buffer">cyclic buffer</a>:  We have a fixed size table <code>_buf</code> (in this case python list), and two indexes <code>rpos</code> and <code>wpos</code> which chase one another around the list (i.e., they are incremented modulo <code>_buf</code>&rsquo;s size):</p>
+
+
+
+<div class="goat svg-container ">
+  
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      font-family="Menlo,Lucida Console,monospace"
+      
+        viewBox="0 0 352 137"
+      >
+      <g transform='translate(8,16)'>
+<path d='M 0,0 L 336,0' fill='none' stroke='currentColor'></path>
+<path d='M 40,32 L 72,32' fill='none' stroke='currentColor'></path>
+<path d='M 72,32 L 104,32' fill='none' stroke='currentColor'></path>
+<path d='M 104,32 L 136,32' fill='none' stroke='currentColor'></path>
+<path d='M 136,32 L 168,32' fill='none' stroke='currentColor'></path>
+<path d='M 168,32 L 200,32' fill='none' stroke='currentColor'></path>
+<path d='M 200,32 L 232,32' fill='none' stroke='currentColor'></path>
+<path d='M 232,32 L 264,32' fill='none' stroke='currentColor'></path>
+<path d='M 264,32 L 296,32' fill='none' stroke='currentColor'></path>
+<path d='M 0,48 L 32,48' fill='none' stroke='currentColor'></path>
+<path d='M 296,48 L 336,48' fill='none' stroke='currentColor'></path>
+<path d='M 40,64 L 72,64' fill='none' stroke='currentColor'></path>
+<path d='M 72,64 L 104,64' fill='none' stroke='currentColor'></path>
+<path d='M 104,64 L 136,64' fill='none' stroke='currentColor'></path>
+<path d='M 136,64 L 168,64' fill='none' stroke='currentColor'></path>
+<path d='M 168,64 L 200,64' fill='none' stroke='currentColor'></path>
+<path d='M 200,64 L 232,64' fill='none' stroke='currentColor'></path>
+<path d='M 232,64 L 264,64' fill='none' stroke='currentColor'></path>
+<path d='M 264,64 L 296,64' fill='none' stroke='currentColor'></path>
+<path d='M 0,0 L 0,48' fill='none' stroke='currentColor'></path>
+<path d='M 40,32 L 40,64' fill='none' stroke='currentColor'></path>
+<path d='M 72,32 L 72,64' fill='none' stroke='currentColor'></path>
+<path d='M 88,80 L 88,96' fill='none' stroke='currentColor'></path>
+<path d='M 104,32 L 104,64' fill='none' stroke='currentColor'></path>
+<path d='M 136,32 L 136,64' fill='none' stroke='currentColor'></path>
+<path d='M 168,32 L 168,64' fill='none' stroke='currentColor'></path>
+<path d='M 200,32 L 200,64' fill='none' stroke='currentColor'></path>
+<path d='M 216,80 L 216,96' fill='none' stroke='currentColor'></path>
+<path d='M 232,32 L 232,64' fill='none' stroke='currentColor'></path>
+<path d='M 264,32 L 264,64' fill='none' stroke='currentColor'></path>
+<path d='M 296,32 L 296,48' fill='none' stroke='currentColor'></path>
+<path d='M 296,48 L 296,64' fill='none' stroke='currentColor'></path>
+<path d='M 336,0 L 336,48' fill='none' stroke='currentColor'></path>
+<polygon points='40.000000,48.000000 28.000000,42.400002 28.000000,53.599998' fill='currentColor' transform='rotate(0.000000, 32.000000, 48.000000)'></polygon>
+<path d='M 88,72 L 88,80' fill='none' stroke='currentColor'></path>
+<polygon points='104.000000,80.000000 92.000000,74.400002 92.000000,85.599998' fill='currentColor' transform='rotate(270.000000, 88.000000, 80.000000)'></polygon>
+<path d='M 216,72 L 216,80' fill='none' stroke='currentColor'></path>
+<polygon points='232.000000,80.000000 220.000000,74.400002 220.000000,85.599998' fill='currentColor' transform='rotate(270.000000, 216.000000, 80.000000)'></polygon>
+<text text-anchor='middle' x='56' y='52' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='80' y='116' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='88' y='52' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='88' y='116' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='96' y='116' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='104' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='112' y='20' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='120' y='20' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='120' y='52' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='128' y='20' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='136' y='20' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='144' y='20' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='152' y='20' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='152' y='52' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='160' y='20' fill='currentColor' style='font-size:1em'>4</text>
+<text text-anchor='middle' x='168' y='20' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='184' y='20' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='184' y='52' fill='currentColor' style='font-size:1em'>4</text>
+<text text-anchor='middle' x='192' y='20' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='200' y='20' fill='currentColor' style='font-size:1em'>z</text>
+<text text-anchor='middle' x='208' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='208' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='216' y='20' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='216' y='52' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='216' y='116' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='224' y='20' fill='currentColor' style='font-size:1em'>8</text>
+<text text-anchor='middle' x='224' y='116' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='232' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='248' y='52' fill='currentColor' style='font-size:1em'>6</text>
+<text text-anchor='middle' x='280' y='52' fill='currentColor' style='font-size:1em'>7</text>
+</g>
+
+    </svg>
+  
+</div>
+<p>We add new element at <code>wpos</code> and remove an existing element at <code>rpos</code>. Removed element is not physically deleted, but it can be overwriten by a new elements. Removing increments <code>rpos</code> by 1 modulo <code>size</code>, where <code>size</code> is a size of <code>_buf</code>. Adding
+increments <code>wpos</code> by 1 modulo <code>size</code>. Thus, <code>wpos</code> and <code>rpos</code> seem to go around the table.
+We should take care not to overwrite unread element or to read unwritten or already read element, and so indexes should never pass one another. Sometimes, however, they can overlap. Instead of taking into account all the possible cases, it is simpler just to keep track of the number <code>count</code> of elements stored in the queue, and  increment or decrement <code>count</code>  by 1 after each addition and removal, respectively.</p>
+<p>This leads to the following implementation of our queueing class:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">MyQueue</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span><span style="color:#000">size</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">size</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">size</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#204a87;font-weight:bold">None</span><span style="color:#000;font-weight:bold">]</span> <span style="color:#ce5c00;font-weight:bold">*</span> <span style="color:#000">size</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wpos</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rpos</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">lock</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">empty</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">full</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">Condition</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">lock</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">enqueue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">x</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">full</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">full</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span><span style="color:#ce5c00;font-weight:bold">&lt;</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">size</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#000;font-weight:bold">[</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wpos</span><span style="color:#000;font-weight:bold">]</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">x</span> 
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span> <span style="color:#ce5c00;font-weight:bold">+=</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wpos</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wpos</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#ce5c00;font-weight:bold">%</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">size</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">empty</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span> 
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">dequeue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">empty</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">empty</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wait_for</span><span style="color:#000;font-weight:bold">(</span><span style="color:#204a87;font-weight:bold">lambda</span><span style="color:#000;font-weight:bold">:</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span><span style="color:#ce5c00;font-weight:bold">&gt;</span><span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">el</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#000;font-weight:bold">[</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rpos</span><span style="color:#000;font-weight:bold">]</span> 
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span> <span style="color:#ce5c00;font-weight:bold">-=</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rpos</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rpos</span> <span style="color:#ce5c00;font-weight:bold">+</span> <span style="color:#0000cf;font-weight:bold">1</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#ce5c00;font-weight:bold">%</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">size</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">full</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">notify</span><span style="color:#000;font-weight:bold">()</span> 
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#000">el</span>   
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__str__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#4e9a06">f</span><span style="color:#4e9a06">&#39;Queue&lt;</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">_buf</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, count=</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">count</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, rpos=</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rpos</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">, wpos=</span><span style="color:#4e9a06">{</span><span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wpos</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&gt;&#39;</span>
+</span></span></code></pre></div>
+
+<div class="post_meta">
+    <b>Timestamp:</b> March 2, 2023 <br>
+    <b>Tags:</b> 
+<a href="https://bartoszpzielinski.github.io/tags/python/">#python</a>
+,
+<a href="https://bartoszpzielinski.github.io/tags/concurrency/">#concurrency</a>
+
+</div>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+</script>
+
+</body>
+</html>

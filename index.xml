@@ -8,6 +8,25 @@
     <language>en-us</language>
     <lastBuildDate>Thu, 19 Jan 2023 19:51:32 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/index.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Condition Variables, Part II</title>
+      <link>https://bartoszpzielinski.github.io/posts/condition-variables-ii/</link>
+      <pubDate>Mon, 06 Mar 2023 19:57:01 +0100</pubDate>
+      
+      <guid>https://bartoszpzielinski.github.io/posts/condition-variables-ii/</guid>
+      <description>In a previous post about condition variables we introduced condition variables in Python, and we have shown how can they be used to solve producer-consumer problem. In this post we will tackle the problem of synchronizing threads so that they all reach certain milestone in the code before proceeding further, i.e., we will show how to implement barriers using condtion variables. Before that, we introduce gates: very useful synchronization primitives, easily implementable using condition variables.</description>
+    </item>
+    
+    <item>
+      <title>Condition Variables, Part I</title>
+      <link>https://bartoszpzielinski.github.io/posts/condition-variables/</link>
+      <pubDate>Thu, 02 Mar 2023 15:08:47 +0100</pubDate>
+      
+      <guid>https://bartoszpzielinski.github.io/posts/condition-variables/</guid>
+      <description>Introduction In a previous post about threads we introduced locks from threading module in Python. Locks are a specialized mechanism used to protect a critical section. More general synchronization patterns require the use of other mechanisms such as semaphores, or condition variables discussed here.
+Condition variables are a synchronization mechanism used, as the name suggests, to suspend the operation of a thread until a certain condition (usually concerning shared data) is met.</description>
+    </item>
+    
+    <item>
       <title>Threads in Python</title>
       <link>https://bartoszpzielinski.github.io/posts/python-threads/</link>
       <pubDate>Sat, 25 Feb 2023 09:59:29 +0100</pubDate>
@@ -32,7 +51,7 @@ One limitation of threading module (at least in the CPython implementation) is a
       <pubDate>Fri, 20 Jan 2023 01:06:21 +0100</pubDate>
       
       <guid>https://bartoszpzielinski.github.io/cookies/</guid>
-      <description>The author of this page does not track his visitors on his own. That said, this page is hosted on Github which uses tracking cookies (although not third-party ones). Also, the site uses Google fonts and, on some posts, several reputable javascript libraries like MathJax and Mermaidjs hosted not locally but on CDN&amp;rsquo;s. Finally, some posts may contain embedded videos from Youtube. Hence, be aware that this site may contain cookies, and also other tracking devices employed by seemingly benign external resources.</description>
+      <description>The author of this page does not track his visitors on his own. He also does not use any social buttons. That said, this page is hosted on GitHub which may use non-essential cookies, though it seems not to, and, in fact, I haven&amp;rsquo;t found any as yet. Also, the site uses Google fonts and, on some posts, several reputable javascript libraries like MathJax and Mermaidjs hosted not locally but on CDN&amp;rsquo;s.</description>
     </item>
     
     <item>

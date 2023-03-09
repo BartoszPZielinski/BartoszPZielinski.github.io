@@ -293,6 +293,14 @@ code.has-jax {font: inherit;
     color: black;
 }
 
+.columns {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    align-items: flex-start;
+    gap: 2em;
+}
+
 @media only screen and (max-width: 600px) {
     .body {
         grid-template-columns: 1fr;
