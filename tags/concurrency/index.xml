@@ -6,7 +6,17 @@
     <description>Recent content in concurrency on Bartosz Zieliński</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 06 Mar 2023 19:57:01 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/tags/concurrency/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Thu, 09 Mar 2023 11:06:44 +0100</lastBuildDate><atom:link href="https://bartoszpzielinski.github.io/tags/concurrency/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Readers-Writers Problem</title>
+      <link>https://bartoszpzielinski.github.io/posts/readers-writers/</link>
+      <pubDate>Thu, 09 Mar 2023 11:06:44 +0100</pubDate>
+      
+      <guid>https://bartoszpzielinski.github.io/posts/readers-writers/</guid>
+      <description>Consider reading previous posts about threads in python and locks and previous post about condition variables for a necessary background if you are not familiar with python threading and concurrency control.
+Introduction The readers-writers problem is one of the classic synchronization problems in concurrency (together with mutual exclusion and the producer-consumer problem) that every computer scientist should know about. We start with the following observation: Operations on shared data should be done within critical sections, to exclude the possibility of two threads modifying the data simultaneously.</description>
+    </item>
+    
     <item>
       <title>Condition Variables, Part II</title>
       <link>https://bartoszpzielinski.github.io/posts/condition-variables-ii/</link>

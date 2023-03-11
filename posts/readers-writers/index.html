@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Two solutions in Python are given, one of them uses condition variables and gates made with condition variables, the other locks of class Lock alone. The latter is left as an exercise">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Grechen+Fuemen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    
+    <title>Readers-Writers Problem | Bartosz Zieliński</title>
+</head>
+<body><div class="body">
+    
+    <header class="blog_header" id="blog_header">
+        <h1 id="blog_title">Bartosz Zieliński<span class="btn_container"><button type="button" id="menu_btn" class="menu_btn closed">menu</button></span></h1>
+    </header>
+    <nav class="blog_menu hidden" id="blog_menu">
+        <ul class="menu_list">
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/">Blog</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/about/">About</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/publications/">Publications</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/projects/">Projects</a></li>
+            
+        
+            
+            <li><a href="https://bartoszpzielinski.github.io/cookies/">Cookies</a></li>
+            
+        
+        </ul>
+
+        <h2 class="menu_heading">Tags</h2>
+        <ul class="menu_list">
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/command-line/">command line</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (4)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/powershell/">powershell</a> (1)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (4)</li>
+            
+            <li><a href="https://bartoszpzielinski.github.io/tags/windows/">windows</a> (1)</li>
+            
+        </ul>
+    </nav>
+    <div class="main" id="main">
+        
+<div class="post_header"><h2>Readers-Writers Problem</h2></div>
+
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#solution-using-two-locks">Solution using two locks</a></li>
+    <li><a href="#solution-using-condition-variables">Solution using condition variables</a></li>
+  </ul>
+</nav>
+
+    
+<p>Consider reading previous posts about <a href="https://bartoszpzielinski.github.io/posts/python-threads/">threads in python and locks</a> and
+<a href="https://bartoszpzielinski.github.io/posts/condition-variables/">previous post about condition variables</a> for a necessary background if you are not familiar with python threading and concurrency control.</p>
+<h3 id="introduction">Introduction</h3>
+<p>The <strong>readers-writers</strong> problem is one of the classic synchronization problems in concurrency
+(together with mutual exclusion and the producer-consumer problem) that every computer scientist should know about. We start with the following observation: Operations on shared data should be done within critical sections, to exclude the possibility of two threads modifying the data simultaneously. On the other hand, multiple threads  <strong>can</strong> simultaneously read the same data without any negative effects. On the still other hand,
+although a read concurrent with a write in another thread will not corrupt the data, the data read  may still come out as inconsistent. Think of listing account data from several bank accounts concurrent with transfer of money between accounts: you may observe either missing on excess money even though the completed write operation does not change the total amount of money in the accounts. These considerations lead to the following general problem of <strong>readers and writers</strong>:</p>
+<blockquote>
+<p>We have two types of threads: <strong>readers</strong> and <strong>writers</strong>. Both types of threads have a generalized critical section S  for which the following conditions are met:</p>
+<ul>
+<li>Two writers cannot be present in S at the same time</li>
+<li>The writer and the reader cannot be present in S at the same time</li>
+<li>However, we allow any number of readers to be in S at the same time</li>
+</ul>
+</blockquote>
+<p>Usually, as the naming suggests, writers modify the shared data, whereas readers just read it. However, the problem is more general, and, in fact, in our nonsensical examples we will not modify nor read any shared data, aside from shared data used for synchronization.</p>
+<p>The following program, and subsequent fixes to it, will illustrate the problem of readers and writers in this post: <span id='read-write-ex'></span></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">threading</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">time</span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">import</span> <span style="color:#000">random</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Reader</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Reader&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;starts reading,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Reader&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;stops reading,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Writer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Writer&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;starts writing,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Writer&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;stops writing,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">factory</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">()</span> <span style="color:#ce5c00;font-weight:bold">&lt;</span> <span style="color:#0000cf;font-weight:bold">0.5</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#000">Reader</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">else</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">return</span> <span style="color:#000">Writer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#000">threads</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">[</span><span style="color:#000">factory</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">)</span> <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">m</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">10</span><span style="color:#000;font-weight:bold">)]</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">t</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#000">threads</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#000">t</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">start</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>Of course, the above code does not contain any synchronization instructions and thus does not satisfy the synchronization constraints of the readers and writers problem.
+The role of the generalized critical section is fulfilled by a pair of messages <code>starts writing/reading</code> &hellip; <code>stops writing/reading</code>. Also note the function <code>factory(m)</code> which returns a reader or writer object (numbered <code>m</code>) depending on a random number from 0 to 1.
+For the code above, the cutoff is 0.5, so we randomly draw an equal number of readers and writers on average. By increasing the threshold value to 0.8 we will ensure that there are on average four times as many readers as writers.</p>
+<p>There are many solutions to the problem of readers and writers using different techniques.
+In the following subsections, we will discuss two such solutions, one in its entirety, the other will be left as an exercise to do on your own. In both cases the alternate description can be found on <a href="https://en.wikipedia.org/wiki/Readers%E2%80%93writer_lock">readers-writers lock article on wiki</a> First, however, we will formulate the skeleton of the solution using as yet unimplemented  <strong>readers-writers lock</strong> (or <strong>RW lock</strong>, for brevity) object. Subsequent solutions will simply implement this lock object differently, with rest of the program remaining unchanged.</p>
+<p>The <code>RWLock</code> class of RW locks must implement the following two pairs of methods:</p>
+<ul>
+<li><code>rLock()</code> and <code>rUnLock()</code> executed by reader threads at the beginning and the end of the critical section, respectively</li>
+<li><code>wLock()</code> and <code>wUnLock()</code> executed by writer threads at the beginning and the end of the critical section, respectively</li>
+</ul>
+<p>Using the <code>rw</code> object of the <code>RWLock</code> class, we can modify the code of the reader and writer threads as follows:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#000">rw</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">RWLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Reader</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">20</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">rw</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Reader&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;starts reading,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Reader&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;stops reading,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">rw</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rUnLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">Writer</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">m</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Thread</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">m</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">run</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">for</span> <span style="color:#000">i</span> <span style="color:#204a87;font-weight:bold">in</span> <span style="color:#204a87">range</span><span style="color:#000;font-weight:bold">(</span><span style="color:#0000cf;font-weight:bold">5</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">rw</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Writer&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;starts writing,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">time</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">sleep</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000">random</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">random</span><span style="color:#000;font-weight:bold">())</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87">print</span><span style="color:#000;font-weight:bold">(</span><span style="color:#4e9a06">&#39;Writer&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">m</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#4e9a06">&#39;stops writing,&#39;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000">i</span><span style="color:#000;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#000">rw</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wUnLock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>All that remains is to implement the <code>RWLock</code> class</p>
+<h3 id="solution-using-two-locks">Solution using two locks</h3>
+<p>In this solution, we use two locks (let&rsquo;s call them <code>rmut</code> and <code>wmut</code>), but no condition variables. However, at least  one of them (<code>wmut</code>) must permit release by a different thread than the one that acquired it. So, we finally get to use <code>threading.Lock</code> class instead of <code>threading.RLock</code> class we used previously in this series. You can  <a href="https://bartoszpzielinski.github.io/posts/python-threads/#locks">recall</a> that, locks of class <code>Lock</code> can be released by any thread.</p>
+<p>In addition to both locks, we also use a shared counter of currently reading readers.
+The idea is as follows: Since the writer must be alone in the critical section, mutual exclusion of writers is implemented in the usual way: before entering the critical section the writer acquires `wmut&rsquo; lock, and releases it when leaving critical section.</p>
+<p>In the case of readers it is more complicated: The shared counter is used to store information about the number of readers currently in the critical section.
+The first reader in the section must acquire <code>wmut</code> to exclude writers, but as long as there is at least one other reader in the critical section already, subsequent readers do not try to acquire the lock. Also, only the last reader to leave the critical section releases <code>wmut</code>. Note that the last reader does not need to be the same as the first reader, hence the requirement that <code>wmut</code> can be released by other thread than the one which acquired it.
+Of course, all the operations on the readers&rsquo; counter and <code>wmut</code> by readers must be executed atomically without any interleaving, so we need a separate <code>rmut</code> lock. The full implementation is shown in the listing below:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">class</span> <span style="color:#000">RWLock</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">__init__</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rmut</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Lock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wmut</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#000">threading</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">Lock</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">readers</span> <span style="color:#ce5c00;font-weight:bold">=</span> <span style="color:#0000cf;font-weight:bold">0</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">rLock</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rmut</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">readers</span> <span style="color:#ce5c00;font-weight:bold">+=</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">readers</span> <span style="color:#ce5c00;font-weight:bold">==</span> <span style="color:#0000cf;font-weight:bold">1</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wmut</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">rUnLock</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#204a87;font-weight:bold">with</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">rmut</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">readers</span> <span style="color:#ce5c00;font-weight:bold">-=</span> <span style="color:#0000cf;font-weight:bold">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#204a87;font-weight:bold">if</span> <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">readers</span> <span style="color:#ce5c00;font-weight:bold">==</span> <span style="color:#0000cf;font-weight:bold">0</span><span style="color:#000;font-weight:bold">:</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wmut</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">wLock</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wmut</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">acquire</span><span style="color:#000;font-weight:bold">()</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#204a87;font-weight:bold">def</span> <span style="color:#000">wUnLock</span><span style="color:#000;font-weight:bold">(</span><span style="color:#3465a4">self</span><span style="color:#000;font-weight:bold">):</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#3465a4">self</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">wmut</span><span style="color:#ce5c00;font-weight:bold">.</span><span style="color:#000">release</span><span style="color:#000;font-weight:bold">()</span>
+</span></span></code></pre></div><p>The above solution can lead to starvation of writers: it may happen that readers will enter and exit the critical section in such a way that the critical section never becomes empty and readers never release the <code>wmut</code> lock once they acquire it.
+This can be seen by running the modified program, especially if we change the probability of creating a reader thread to 0.8 in the <code>factory(m)</code> function.
+Then we&rsquo;ll see that in some runs only after all or most reader threads exit, the writers can execute. In this case there is no actual starvation of writers only because readers execute only for a finite amount of time. Even in this case, there may be many reasons why “all readers first, then writers” might be undesirable.</p>
+<h3 id="solution-using-condition-variables">Solution using condition variables</h3>
+<p>The idea is this: we use a conditional variable and an associated lock to wait for certain conditions to be met. The state of the system related to synchronization is stored in three shared variables:</p>
+<ul>
+<li><code>readers</code> stores the number of readers currently in the critical section.</li>
+<li><code>waiting_writers</code> stores the number of writers waiting to enter the critical section</li>
+<li><code>writer_active</code> is a boolean, <code>True</code> when there is a writer in the critical section, <code>False</code> otherwise (there can be no more than one writer in the critical section so boolean value suffices).</li>
+</ul>
+<p>According to the algorithm, the reader can enter critical section only if</p>
+<ul>
+<li>No writer is in critical section (<code>not writer_active</code>)</li>
+<li>and no writer waits to enter the critical section (<code>waiting_writers == 0</code>)</li>
+</ul>
+<p>The writer can enter the critical section only when</p>
+<ul>
+<li>no reader is in the critical section (<code>readers == 0</code>)</li>
+<li>and no writer is in the critical section (<code>not writer_active</code>)</li>
+</ul>
+<p>Of course, readers and writers entering and leaving the critical section modify the <code>readers</code>, <code>waiting_writers</code> and <code>writer_active</code> variables accordingly.
+In addition, the last reader leaving the critical section signals a conditional variable
+waking up both the writers waiting outside the section and the late readers.
+The conditional variable is also signaled by the writer leaving the critical section.</p>
+<p>It is easy to see that the above algorithm prefers writers. In particular, it can lead to starvation of readers when there is always a writer waiting outside the critical section (and another one waits before he enters the section).</p>
+<p><strong>TASK FOR YOURSELF</strong> Implement the RW lock in accordance with the given algorithm.
+The lock should have the same methods as the one in the previous subsection (only implemented differently.) Use the implemented  lock in the <a href="#read-write-ex">sample program</a>.</p>
+
+
+<div class="post_meta">
+    <b>Timestamp:</b> March 9, 2023 <br>
+    <b>Tags:</b> 
+<a href="https://bartoszpzielinski.github.io/tags/python/">#python</a>
+,
+<a href="https://bartoszpzielinski.github.io/tags/concurrency/">#concurrency</a>
+
+</div>
+
+
+        <footer class="copy-notice"><p>&copy; 
+            2023 Bartosz Zieliński</p></footer>
+    </div>
+</div>
+<script>
+    document.getElementById('menu_btn').addEventListener('click', function(event) {
+        this.classList.toggle('closed');
+        document.getElementById('blog_menu').classList.toggle('hidden');
+    });
+</script>
+
+</body>
+</html>

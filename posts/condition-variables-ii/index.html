@@ -51,11 +51,11 @@
             
             <li><a href="https://bartoszpzielinski.github.io/tags/command-line/">command line</a> (1)</li>
             
-            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (3)</li>
+            <li><a href="https://bartoszpzielinski.github.io/tags/concurrency/">concurrency</a> (4)</li>
             
             <li><a href="https://bartoszpzielinski.github.io/tags/powershell/">powershell</a> (1)</li>
             
-            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (3)</li>
+            <li><a href="https://bartoszpzielinski.github.io/tags/python/">python</a> (4)</li>
             
             <li><a href="https://bartoszpzielinski.github.io/tags/windows/">windows</a> (1)</li>
             
@@ -78,7 +78,7 @@
 </nav>
 
     
-<p>In a <a href="https://bartoszpzielinski.github.io/posts/condition-variables/">previous post about condition variables</a> we introduced condition variables in Python, and we have shown how can they be used to solve producer-consumer problem. In this post we will tackle the problem of synchronizing threads so that they all reach certain milestone in the code before proceeding further, i.e., we will show how to implement <strong>barriers</strong> using condtion variables. Before that, we introduce <strong>gates</strong>: very useful synchronization primitives, easily implementable using condition variables. Here we use gates to implement barriers. Gates will also appear in a future post about readers-writers problem.</p>
+<p>In a <a href="https://bartoszpzielinski.github.io/posts/condition-variables/">previous post about condition variables</a> we introduced condition variables in Python, and we have shown how can they be used to solve producer-consumer problem. In this post we will tackle the problem of synchronizing threads so that they all reach certain milestone in the code before proceeding further, i.e., we will show how to implement <strong>barriers</strong> using condtion variables. Before that, we introduce <strong>gates</strong>: very useful synchronization primitives, easily implementable using condition variables. Here we use gates to implement barriers.</p>
 <p>I learned about barriers from
 <a href="https://greenteapress.com/wp/semaphores/">The Little Book of Semaphores</a> by
 Allen B. Downey (of course the book uses semaphores and here I use condition variables).</p>

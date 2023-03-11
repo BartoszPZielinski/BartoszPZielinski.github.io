@@ -3,18 +3,21 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://bartoszpzielinski.github.io/tags/concurrency/</loc>
-    <lastmod>2023-03-06T19:57:01+01:00</lastmod>
-  </url><url>
-    <loc>https://bartoszpzielinski.github.io/posts/condition-variables-ii/</loc>
-    <lastmod>2023-03-06T19:57:01+01:00</lastmod>
+    <lastmod>2023-03-09T11:06:44+01:00</lastmod>
   </url><url>
     <loc>https://bartoszpzielinski.github.io/posts/</loc>
-    <lastmod>2023-03-06T19:57:01+01:00</lastmod>
+    <lastmod>2023-03-09T11:06:44+01:00</lastmod>
   </url><url>
     <loc>https://bartoszpzielinski.github.io/tags/python/</loc>
-    <lastmod>2023-03-06T19:57:01+01:00</lastmod>
+    <lastmod>2023-03-09T11:06:44+01:00</lastmod>
+  </url><url>
+    <loc>https://bartoszpzielinski.github.io/posts/readers-writers/</loc>
+    <lastmod>2023-03-09T11:06:44+01:00</lastmod>
   </url><url>
     <loc>https://bartoszpzielinski.github.io/tags/</loc>
+    <lastmod>2023-03-09T11:06:44+01:00</lastmod>
+  </url><url>
+    <loc>https://bartoszpzielinski.github.io/posts/condition-variables-ii/</loc>
     <lastmod>2023-03-06T19:57:01+01:00</lastmod>
   </url><url>
     <loc>https://bartoszpzielinski.github.io/posts/condition-variables/</loc>
